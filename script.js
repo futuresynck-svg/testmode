@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (config.google_maps_api_key) {
                 googleMapsApiKey = config.google_maps_api_key;
                 const script = document.createElement('script');
-                script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places`;
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places&loading=async`;
                 document.head.appendChild(script);
             }
         } catch (e) {
