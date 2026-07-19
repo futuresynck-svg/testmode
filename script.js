@@ -464,6 +464,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         window.samMaskUrls = null;
         window.isSamAnalyzing = true;
+        if (window.activeSamMasks) window.activeSamMasks.clear();
+        window.lastGeneratedAiMask = null;
+        const aiModal = document.getElementById('aiBuildingModal');
+        if (aiModal) aiModal.classList.add('hidden');
         
         // --- SAMモードをデフォルトでオンにする ---
         isSAMMode = true;
@@ -501,6 +505,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // バックグラウンドで解析開始
             function preloadWithRetry() {
+                loadingText.textContent = "AIが画像を事前解析中です...完了までしばらくお待ちください。";
+                loadingOverlay.classList.remove('hidden');
                 console.log("バックグラウンド解析を開始します...");
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 300000); // 5分でフロント側でもタイムアウト
@@ -856,15 +862,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
                 
-                fabric.Image.fromURL(data.image_url, function(bgImg) {
-                    if (!bgImg) return;
-                    const scale = maxCanvasWidth / bgImg.width;
-                    canvas.setWidth(maxCanvasWidth);
-                    canvas.setHeight(bgImg.height * scale);
-                    bgImg.set({ scaleX: scale, scaleY: scale, originX: 'left', originY: 'top' });
-                    canvas.setBackgroundImage(bgImg, canvas.requestRenderAll.bind(canvas));
-                    currentImageSrc = data.image_url;
-                }, { crossOrigin: 'anonymous' });
+                setImageSourceAndProceed(data.image_url);
             }
         })
         .catch(err => {
