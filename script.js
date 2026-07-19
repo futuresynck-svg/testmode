@@ -201,15 +201,210 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+
+        // SAM Masks State
+        window.activeSamMasks = new Set(); 
+        const accumulatedMaskCanvas = document.createElement('canvas');
+        const accumulatedMaskCtx = accumulatedMaskCanvas.getContext('2d');
+        let isAccumulatedCanvasInit = false;
+
+        function updateAccumulatedMask() {
+            if (window.activeSamMasks.size === 0) {
+                window.lastGeneratedAiMask = null;
+                return;
+            }
+            // Generate a combined mask from all active visual masks
+            const bg = canvas.backgroundImage;
+            if (!bg) return;
+            
+            accumulatedMaskCanvas.width = bg.width;
+            accumulatedMaskCanvas.height = bg.height;
+            accumulatedMaskCtx.fillStyle = 'black';
+            accumulatedMaskCtx.fillRect(0, 0, bg.width, bg.height);
+            
+            const scale = maxCanvasWidth / bg.width;
+            
+            const objects = canvas.getObjects();
+            objects.forEach(obj => {
+                if (obj.customType === 'ai-mask-visual' && obj.maskUrl) {
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = bg.width;
+                    tempCanvas.height = bg.height;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    
+                    // We need to draw the original mask image to accumulate.
+                    // But wait, the ai-mask-visual is a red version of it.
+                    // We can just create a white mask by reading the pixels of the red visual mask.
+                    const objCanvas = obj.toCanvasElement();
+                    tempCtx.drawImage(objCanvas, 0, 0, bg.width, bg.height);
+                    const imgData = tempCtx.getImageData(0, 0, bg.width, bg.height);
+                    const data = imgData.data;
+                    
+                    const accImgData = accumulatedMaskCtx.getImageData(0, 0, bg.width, bg.height);
+                    const accData = accImgData.data;
+                    
+                    for (let i = 0; i < data.length; i += 4) {
+                        if (data[i+3] > 0) { // If it has alpha (it's the red mask)
+                            accData[i] = 255;
+                            accData[i+1] = 255;
+                            accData[i+2] = 255;
+                            accData[i+3] = 255;
+                        }
+                    }
+                    accumulatedMaskCtx.putImageData(accImgData, 0, 0);
+                }
+            });
+            window.lastGeneratedAiMask = accumulatedMaskCanvas.toDataURL('image/png');
+        }
+
         canvas.on('mouse:down', function(opt) {
-            if (isSpaceDown || opt.e.altKey) {
+            if (isSpaceDown || (opt.e && opt.e.altKey)) {
                 isDragging = true;
                 canvas.selection = false;
                 lastPosX = opt.e.clientX;
                 lastPosY = opt.e.clientY;
                 canvas.defaultCursor = 'grabbing';
+                return;
+            }
+
+            if (isDemolitionMode) return;
+            
+            if (isSAMMode) {
+                if (canvas.backgroundImage) {
+                    // Check if they clicked an existing AI mask
+                    if (opt.target && opt.target.customType === 'ai-mask-visual') {
+                        // Toggle OFF
+                        canvas.remove(opt.target);
+                        canvas.renderAll();
+                        if (opt.target.maskUrl) {
+                            window.activeSamMasks.delete(opt.target.maskUrl);
+                        }
+                        updateAccumulatedMask();
+                        
+                        if (window.activeSamMasks.size === 0) {
+                            document.getElementById('aiBuildingModal').classList.add('hidden');
+                        }
+                        return; // Done toggling off
+                    }
+
+                    if (window.isSamAnalyzing) {
+                        loadingText.textContent = "AIが画像を事前解析中です...完了までしばらくお待ちください。";
+                        loadingOverlay.classList.remove('hidden');
+                        setTimeout(() => { loadingOverlay.classList.add('hidden'); }, 3000);
+                        return;
+                    }
+                    
+                    if (!window.samMaskUrls || window.samMaskUrls.length === 0) {
+                        alert("自動ブロック抽出に失敗したか、準備ができていません。手動の「解体ブラシ」をご利用ください。");
+                        return;
+                    }
+
+                    let pointer = canvas.getPointer(opt.e);
+                    const bg = canvas.backgroundImage;
+                    const scale = bg.scaleX || 1;
+                    
+                    const imgX = Math.floor(pointer.x / scale);
+                    const imgY = Math.floor(pointer.y / scale);
+                    
+                    if (imgX < 0 || imgY < 0 || imgX >= bg.width || imgY >= bg.height) return;
+
+                    const maxDim = 1280;
+                    const origWidth = bg.width;
+                    const origHeight = bg.height;
+                    let newWidth = origWidth;
+                    let newHeight = origHeight;
+                    
+                    if (Math.max(origWidth, origHeight) > maxDim) {
+                        if (origWidth > origHeight) {
+                            newWidth = maxDim;
+                            newHeight = Math.round((origHeight * maxDim) / origWidth);
+                        } else {
+                            newHeight = maxDim;
+                            newWidth = Math.round((origWidth * maxDim) / origHeight);
+                        }
+                    }
+                    
+                    loadingOverlay.classList.remove('hidden');
+                    loadingText.textContent = "ブロックを抽出中...";
+                    
+                    fetch('/api/segment_pick', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            mask_urls: window.samMaskUrls,
+                            x: Math.round(imgX * (newWidth / origWidth)),
+                            y: Math.round(imgY * (newHeight / origHeight))
+                        })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.error) {
+                            loadingOverlay.classList.add('hidden');
+                            alert("APIエラー: " + data.error);
+                        } else {
+                            // Check if this mask was already selected
+                            if (window.activeSamMasks.has(data.mask_url)) {
+                                loadingOverlay.classList.add('hidden');
+                                return; 
+                            }
+
+                            const newMaskImg = new Image();
+                            newMaskImg.crossOrigin = "anonymous";
+                            newMaskImg.onload = () => {
+                                const tempCanvas = document.createElement('canvas');
+                                tempCanvas.width = newMaskImg.width;
+                                tempCanvas.height = newMaskImg.height;
+                                const tempCtx = tempCanvas.getContext('2d');
+                                tempCtx.drawImage(newMaskImg, 0, 0);
+                                
+                                const maskImgData = tempCtx.getImageData(0, 0, origWidth, origHeight);
+                                const mData = maskImgData.data;
+                                
+                                const visualCanvas = document.createElement('canvas');
+                                visualCanvas.width = origWidth;
+                                visualCanvas.height = origHeight;
+                                const visualCtx = visualCanvas.getContext('2d');
+                                const visualImgData = visualCtx.createImageData(origWidth, origHeight);
+                                const vData = visualImgData.data;
+                                
+                                let hasAnyMask = false;
+                                for (let i = 0; i < mData.length; i += 4) {
+                                    if (mData[i] > 128) {
+                                        hasAnyMask = true;
+                                        vData[i] = 239; vData[i+1] = 68; vData[i+2] = 68; vData[i+3] = 128; // Red semi-transparent
+                                    }
+                                }
+                                
+                                if (hasAnyMask) {
+                                    visualCtx.putImageData(visualImgData, 0, 0);
+                                    window.activeSamMasks.add(data.mask_url);
+                                    
+                                    fabric.Image.fromURL(visualCanvas.toDataURL('image/png'), function(img) {
+                                        img.set({ scaleX: scale, scaleY: scale, left: 0, top: 0, originX: 'left', originY: 'top', customType: 'ai-mask-visual', maskUrl: data.mask_url, selectable: true, evented: true, hasControls: false, hasBorders: false, hoverCursor: 'pointer' });
+                                        canvas.add(img);
+                                        canvas.renderAll();
+                                        updateAccumulatedMask();
+                                        loadingOverlay.classList.add('hidden');
+                                        
+                                        setTimeout(() => {
+                                            document.getElementById('aiBuildingModal').classList.remove('hidden');
+                                        }, 100);
+                                    });
+                                } else {
+                                    loadingOverlay.classList.add('hidden');
+                                }
+                            };
+                            newMaskImg.src = data.mask_url;
+                        }
+                    })
+                    .catch(err => {
+                        loadingOverlay.classList.add('hidden');
+                        console.error(err);
+                    });
+                }
             }
         });
+
 
         canvas.on('mouse:move', function(opt) {
             if (isDragging) {
