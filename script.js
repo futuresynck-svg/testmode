@@ -46,7 +46,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Toolbar Elements
     const demolitionBrushBtn = document.getElementById('demolitionBrushBtn');
     const executeDemolitionBtn = document.getElementById('executeDemolitionBtn');
-    const extractBtn = document.getElementById('extractBtn');
     const deleteBtn = document.getElementById('deleteBtn');
     const bringFrontBtn = document.getElementById('bringFrontBtn');
     const sendBackBtn = document.getElementById('sendBackBtn');
@@ -270,11 +269,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // --- SAMモードをデフォルトでオンにする ---
         isSAMMode = true;
-        const extractBtn = document.getElementById('extractBtn');
-        if(extractBtn) {
-            extractBtn.style.color = '#3b82f6';
-            extractBtn.style.borderColor = '#3b82f6';
-        }
         // 他のモードをオフにする
         isDemolitionMode = false;
         const brushBtn = document.getElementById('demolitionBrushBtn');
@@ -307,32 +301,59 @@ document.addEventListener('DOMContentLoaded', () => {
             tempCtx.drawImage(img.getElement(), 0, 0, newWidth, newHeight);
             const optimizedImageB64 = tempCanvas.toDataURL('image/jpeg', 0.9);
             
-            // バックグラウンドで解析開始 (リトライ機能付き)
-            function preloadWithRetry(retries = 1) {
+            // バックグラウンドで解析開始
+            function preloadWithRetry() {
+                console.log("バックグラウンド解析を開始します...");
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 300000); // 5分でフロント側でもタイムアウト
+
                 fetch('/api/segment_preload', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: optimizedImageB64 })
+                    body: JSON.stringify({ image: optimizedImageB64 }),
+                    signal: controller.signal
                 })
-                .then(res => res.json().then(data => ({status: res.status, data})))
-                .then(({status, data}) => {
-                    if (status !== 200 || !data.success) {
-                        throw new Error(data.error || "Unknown error");
+                .then(res => {
+                    clearTimeout(timeoutId);
+                    if (!res.ok) {
+                        // 504 Gateway TimeoutなどでHTMLが返ってきた場合のパースエラーを防ぐ
+                        return res.text().then(text => {
+                            throw new Error(`HTTP ${res.status}: ${text.substring(0, 100)}`);
+                        });
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    if (!data.success) {
+                        throw new Error(data.error || "Unknown API error");
                     }
                     window.isSamAnalyzing = false;
                     window.samMaskUrls = data.mask_urls;
                     console.log("全自動解析完了:", data.mask_urls.length, "個のブロックを検出");
+                    
+                    // ローディング画面を消す
+                    loadingOverlay.classList.add('hidden');
+                    
+                    // ユーザーがクリックして待機していた場合は完了を知らせる
+                    if (loadingText.textContent.includes("事前解析中")) {
+                        setTimeout(() => {
+                            alert("事前解析が完了しました！キャンバス上の抽出したい建物をクリックしてください。");
+                        }, 100);
+                    }
                 })
                 .catch(err => {
-                    if (retries > 0) {
-                        console.warn("全自動解析エラー、再試行します...", err);
-                        setTimeout(() => preloadWithRetry(retries - 1), 2000);
-                    } else {
-                        window.isSamAnalyzing = false;
-                        window.samMaskUrls = null; // エラー時は明示的にnullにする
-                        console.error("全自動解析エラー(最終):", err);
-                        alert("AIの自動ブロック解析に失敗しました。画像が複雑すぎるかサーバーエラーの可能性があります。\nお手数ですが再度画像を読み込むか、手動の解体ブラシをご利用ください。");
-                    }
+                    window.isSamAnalyzing = false;
+                    window.samMaskUrls = null; // エラー時は明示的にnullにする
+                    console.error("全自動解析エラー:", err);
+                    loadingOverlay.classList.add('hidden'); // エラー時にも確実ローディングを消す
+                    
+                    setTimeout(() => {
+                        if (err.name === 'AbortError') {
+                            alert("事前解析がタイムアウトしました（5分超過）。画像が複雑すぎるか、サーバーが混雑しています。手動ブラシをご利用ください。");
+                        } else {
+                            alert("自動ブロック解析に失敗しました。\n詳細: " + err.message + "\n手動の解体ブラシをご利用ください。");
+                        }
+                    }, 100);
                 });
             }
             preloadWithRetry();
@@ -643,17 +664,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- モード切替の排他制御リセット ---
     function resetToolModes() {
-        // 解体ブラシモードをOFF
+        // 解体ブラシモードOFF
         isDemolitionMode = false;
         canvas.isDrawingMode = false;
         demolitionBrushBtn.style.color = 'var(--text-primary)';
         demolitionBrushBtn.style.borderColor = 'var(--border-color)';
         executeDemolitionBtn.classList.add('hidden');
         
-        // SAMモードをOFF
-        isSAMMode = false;
-        extractBtn.style.color = 'var(--text-primary)';
-        extractBtn.style.borderColor = 'var(--border-color)';
+        // SAMモードON (デフォルト)
+        isSAMMode = true;
     }
 
     // Demolition Brush (Inpainting Mask Mock)
@@ -663,6 +682,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (!wasDemolition) {
             isDemolitionMode = true;
+            isSAMMode = false; // 解体ブラシ時はSAMをOFF
             canvas.isDrawingMode = true;
             
             demolitionBrushBtn.style.color = '#ef4444';
@@ -782,7 +802,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 prompt: "Seamless background, natural continuation of the surroundings, empty space, clear sky, empty ground, neighborhood landscape, photorealistic, no buildings"
             })
         })
-        .then(res => res.json())
+        .then(res => {
+            if (!res.ok) {
+                return res.text().then(text => {
+                    throw new Error(`HTTP ${res.status}: ${text.substring(0, 100)}`);
+                });
+            }
+            return res.json();
+        })
         .then(data => {
             loadingOverlay.classList.add('hidden');
             executeDemolitionBtn.disabled = false;
@@ -797,7 +824,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.error) {
                 setTimeout(() => {
                     alert("APIエラー: " + data.error + "\n（※現在はキーがないためエラーを返していますが、システムは正常に疎通しています！）");
-                }, 50);
+                }, 100);
             } else {
                 saveHistory(); // Save state before changing
                 fabric.Image.fromURL(data.image_url, function(bgImg) {
@@ -815,8 +842,8 @@ document.addEventListener('DOMContentLoaded', () => {
             loadingOverlay.classList.add('hidden');
             executeDemolitionBtn.disabled = false;
             setTimeout(() => {
-                alert("通信エラー: " + err);
-            }, 50);
+                alert("通信エラーが発生しました。\n詳細: " + err.message);
+            }, 100);
         });
     });
 
@@ -920,31 +947,6 @@ document.addEventListener('DOMContentLoaded', () => {
         canvas.renderAll();
     });
 
-    extractBtn.addEventListener('click', () => {
-        const wasSAM = isSAMMode;
-        resetToolModes();
-        
-        if(!wasSAM) {
-            isSAMMode = true;
-            extractBtn.style.color = '#3b82f6';
-            extractBtn.style.borderColor = '#3b82f6';
-            
-            // 初回クリック時の初期化
-            if (!isAccumulatedCanvasInit && canvas.backgroundImage) {
-                accumulatedMaskCanvas.width = canvas.backgroundImage.width;
-                accumulatedMaskCanvas.height = canvas.backgroundImage.height;
-                accumulatedMaskCtx.fillStyle = "black";
-                accumulatedMaskCtx.fillRect(0, 0, accumulatedMaskCanvas.width, accumulatedMaskCanvas.height);
-                isAccumulatedCanvasInit = true;
-                window.lastGeneratedAiMask = null;
-            }
-            
-            alert('抽出（マスク）したい建物を直接タッチしてください。\n（事前解析が完了していれば一瞬で抽出され、そのまま生成画面に進めます）');
-        } else {
-            extractBtn.style.color = 'var(--text-primary)';
-            extractBtn.style.borderColor = 'var(--border-color)';
-        }
-    });
 
     canvas.on('mouse:down', function(opt) {
         if (isSpaceDown || (opt.e && opt.e.altKey)) return;
@@ -958,9 +960,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (window.isSamAnalyzing) {
-                loadingText.textContent = "AIが建物のブロック構造を事前解析中です（残り数十秒）...";
+                loadingText.textContent = "AIが建物のブロック構造を事前解析中です（完了まで約30秒）...";
                 loadingOverlay.classList.remove('hidden');
-                setTimeout(() => { loadingOverlay.classList.add('hidden'); }, 3000);
                 return;
             }
             
@@ -973,9 +974,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const bg = canvas.backgroundImage;
             const scale = bg.scaleX || 1;
             
-            // Map pointer to original image coordinates
-            const imgX = Math.floor(pointer.x / scale);
-            const imgY = Math.floor(pointer.y / scale);
+            // Map pointer to original image coordinates (accounting for origin dynamically)
+            let bgLeft = bg.left;
+            let bgTop = bg.top;
+            if (bg.originX === 'center') bgLeft -= (bg.width * scale) / 2;
+            if (bg.originY === 'center') bgTop -= (bg.height * scale) / 2;
+            const imgX = Math.floor((pointer.x - bgLeft) / scale);
+            const imgY = Math.floor((pointer.y - bgTop) / scale);
             
             if (imgX < 0 || imgY < 0 || imgX >= bg.width || imgY >= bg.height) return;
 
@@ -1018,11 +1023,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     y: Math.round(imgY * (newHeight / origHeight))
                 })
             })
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) {
+                    return res.text().then(text => {
+                        throw new Error(`HTTP ${res.status}: ${text.substring(0, 100)}`);
+                    });
+                }
+                return res.json();
+            })
             .then(data => {
                 if (data.error) {
                     loadingOverlay.classList.add('hidden');
-                    alert("APIエラー: " + data.error);
+                    setTimeout(() => alert("APIエラー: " + data.error), 100);
                 } else {
                     // APIから返ってきたマスク画像を読み込み、既存のマスクと合成する
                     const newMaskImg = new Image();
@@ -1092,7 +1104,7 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .catch(err => {
                 loadingOverlay.classList.add('hidden');
-                alert("通信エラーが発生しました。\n詳細: " + err.message);
+                setTimeout(() => alert("通信エラーが発生しました。\n詳細: " + err.message), 100);
             });
         }
     });

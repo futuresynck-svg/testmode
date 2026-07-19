@@ -95,7 +95,7 @@ def segment_preload():
         for attempt in range(max_retries):
             try:
                 prediction = replicate.predictions.create(
-                    version="cbd95fb76192174268b6b303aeeb7a736e8dab0cbc38177f09db79b2299da30b",
+                    version="be7cbde9fdf0eecdc8b20ffec9dd0d1cfeace0832d4d0b58a071d993182e1be0",
                     input=inputs
                 )
                 break
@@ -108,14 +108,14 @@ def segment_preload():
         
         start_time = time.time()
         while prediction.status not in ["succeeded", "failed", "canceled"]:
-            if time.time() - start_time > 80:
+            if time.time() - start_time > 250:
                 prediction.cancel()
                 return jsonify({'error': '事前解析がタイムアウトしました。'}), 504
             time.sleep(1)
             prediction.reload()
             
         if prediction.status == "succeeded":
-            masks = prediction.output.get('individual_masks', [])
+            masks = list(prediction.output) if isinstance(prediction.output, list) else prediction.output.get('individual_masks', [])
             return jsonify({'success': True, 'mask_urls': masks})
         else:
             return jsonify({'error': f'Replicate SAM failed: {prediction.error}'}), 500
@@ -138,47 +138,54 @@ def segment_pick():
     if not masks:
         return jsonify({'error': 'マスクリストが空です。'}), 400
 
-    import concurrent.futures
-    import urllib.request
-    import numpy as np
-    from PIL import Image
+    try:
+        import concurrent.futures
+        import requests
+        import io
+        import numpy as np
+        from PIL import Image
     
-    def fetch_and_check_mask(url, target_x, target_y):
-        try:
-            resp = urllib.request.urlopen(url)
-            img = Image.open(resp).convert('L')
-            arr = np.array(img)
-            
-            radius = 10
-            y_min = max(0, target_y - radius)
-            y_max = min(arr.shape[0], target_y + radius + 1)
-            x_min = max(0, target_x - radius)
-            x_max = min(arr.shape[1], target_x + radius + 1)
-            
-            if y_min < y_max and x_min < x_max:
-                if np.any(arr[y_min:y_max, x_min:x_max] > 128):
-                    area = np.sum(arr > 128)
-                    return url, area
-        except Exception as e:
-            print(f"Error fetching mask {url}: {e}")
-            pass
-        return None, float('inf')
-
-    best_mask_url = None
-    min_area = float('inf')
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(masks), 50)) as executor:
-        futures = [executor.submit(fetch_and_check_mask, url, int(x), int(y)) for url in masks]
-        for future in concurrent.futures.as_completed(futures):
-            url, area = future.result()
-            if url and area < min_area:
-                min_area = area
-                best_mask_url = url
+        def fetch_and_check_mask(url, target_x, target_y):
+            try:
+                resp = requests.get(url, timeout=10)
+                img = Image.open(io.BytesIO(resp.content)).convert('L')
+                arr = np.array(img)
                 
-    if best_mask_url:
-        return jsonify({'success': True, 'mask_url': best_mask_url})
-    else:
-        return jsonify({'error': 'クリックした位置に明確なブロックが見つかりませんでした。別の場所をクリックするか、手動ブラシをお使いください。'}), 500
+                radius = 10
+                y_min = max(0, target_y - radius)
+                y_max = min(arr.shape[0], target_y + radius + 1)
+                x_min = max(0, target_x - radius)
+                x_max = min(arr.shape[1], target_x + radius + 1)
+                
+                if y_min < y_max and x_min < x_max:
+                    if np.any(arr[y_min:y_max, x_min:x_max] > 128):
+                        area = np.sum(arr > 128)
+                        return url, area
+            except Exception as e:
+                print(f"Error fetching mask {url}: {e}")
+                pass
+            return None, float('inf')
+    
+        best_mask_url = None
+        min_area = float('inf')
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(masks), 50)) as executor:
+            futures = [executor.submit(fetch_and_check_mask, url, int(x), int(y)) for url in masks]
+            for future in concurrent.futures.as_completed(futures):
+                url, area = future.result()
+                if url and area < min_area:
+                    min_area = area
+                    best_mask_url = url
+                    
+        if best_mask_url:
+            return jsonify({'success': True, 'mask_url': best_mask_url})
+        else:
+            return jsonify({'error': 'クリックした位置に明確なブロックが見つかりませんでした。別の場所をクリックするか、手動ブラシをお使いください。'}), 500
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Internal Error: {str(e)}'}), 500
 
 
 @app.route('/api/generate_building', methods=['POST'])
