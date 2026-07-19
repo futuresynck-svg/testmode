@@ -239,7 +239,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Wizard Navigation Logic ---
+    // --- Step 1: Image Input Logic ---
+    let currentImageSrc = null;
+    let currentStep = 1;
+
     function goToStep(step) {
+        currentStep = step;
         // Hide all
         step1View.classList.add('hidden');
         step3View.classList.add('hidden');
@@ -259,7 +264,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Step 1: Image Input Logic ---
-    let currentImageSrc = null;
 
     function setImageSourceAndProceed(src) {
         currentImageSrc = src;
@@ -551,7 +555,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({
                     image: currentImageSrc,
                     mask: "dummy_mask_for_initial_generation",
-                    prompt: `${prompt}, architectural photography, highly detailed`
+                    prompt: `${prompt}, 【Absolute Rule: Keep the original background environment strictly unchanged, exactly preserve all surroundings, do not alter adjacent buildings or roads】, architectural photography, highly detailed`
                 })
             });
             const data = await response.json();
