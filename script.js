@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let googleMapsApiKey = '';
     async function initGoogleMaps() {
         try {
-            const res = await fetch('http://localhost:5000/api/config');
+            const res = await fetch('/api/config');
             const config = await res.json();
             if (config.google_maps_api_key) {
                 googleMapsApiKey = config.google_maps_api_key;
@@ -491,7 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         try {
             // ローカルのPythonサーバーへリクエストを送信
-            const response = await fetch('http://localhost:5000/api/get_streetview', {
+            const response = await fetch('/api/get_streetview', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
