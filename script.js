@@ -45,7 +45,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Toolbar Elements
     const demolitionBrushBtn = document.getElementById('demolitionBrushBtn');
-    const executeDemolitionBtn = document.getElementById('executeDemolitionBtn');
     const deleteBtn = document.getElementById('deleteBtn');
     const bringFrontBtn = document.getElementById('bringFrontBtn');
     const sendBackBtn = document.getElementById('sendBackBtn');
@@ -531,270 +530,93 @@ document.addEventListener('DOMContentLoaded', () => {
     openAiModalBtn.addEventListener('click', () => {
         aiBuildingModal.classList.remove('hidden');
     });
+
+    const quickPromptBtns = document.querySelectorAll('.quick-prompt-btn');
+    const promptTextarea = document.getElementById('prompt');
+    quickPromptBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            promptTextarea.value = btn.getAttribute('data-prompt');
+        });
+    });
     
     closeAiModalBtn.addEventListener('click', () => {
         aiBuildingModal.classList.add('hidden');
     });
 
     // --- Generate AI Content ---
+    // --- Generate AI Content (Unified with Mask generation) ---
     generateBtn.addEventListener('click', async () => {
-        if (!currentImageSrc) return;
-
         const prompt = document.getElementById('prompt').value;
-
-        // Show loading
-        loadingText.textContent = "AIが建物をデザイン・合成しています...";
-        loadingOverlay.classList.remove('hidden');
-        resultMessage.textContent = '';
-        generateBtn.disabled = true;
-
-        try {
-            const response = await fetch('/api/generate_building', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    image: currentImageSrc,
-                    mask: "dummy_mask_for_initial_generation",
-                    prompt: `${prompt}, 【Absolute Rule: Keep the original background environment strictly unchanged, exactly preserve all surroundings, do not alter adjacent buildings or roads】, architectural photography, highly detailed`
-                })
-            });
-            const data = await response.json();
-            
-            loadingOverlay.classList.add('hidden');
-            generateBtn.disabled = false;
-            
-            // モーダルを閉じる
-            aiBuildingModal.classList.add('hidden');
-
-            if (data.error) {
-                    setTimeout(() => {
-                        alert("APIエラー: " + data.error + "\n（※現在はキーがないためエラーを返していますが、システムは正常に疎通しています！）");
-                    }, 50);
-                    
-                    // フォールバック: ダミー画像の追加
-                    const dummyGeneratedBuildingUrl = 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?q=80&w=600&auto=format&fit=crop';
-                    fabric.Image.fromURL(dummyGeneratedBuildingUrl, function(aiImg) {
-                        if (!aiImg) return;
-                        const aiScale = (canvas.width * 0.6) / aiImg.width;
-                        aiImg.set({
-                            scaleX: aiScale,
-                            scaleY: aiScale,
-                            left: canvas.width / 2,
-                            top: canvas.height / 2,
-                            originX: 'center',
-                            originY: 'center',
-                            hasControls: true,
-                            hasBorders: true,
-                            borderColor: '#6366f1',
-                            cornerColor: '#6366f1',
-                            transparentCorners: false,
-                            cornerSize: 8,
-                            cornerStyle: 'circle'
-                        });
-                        canvas.add(aiImg);
-                        canvas.setActiveObject(aiImg);
-                        canvas.renderAll();
-                    }, { crossOrigin: 'anonymous' });
-                } else {
-                    saveHistory(); // Save before adding new AI object
-                    fabric.Image.fromURL(data.image_url, function(aiImg) {
-                        if (!aiImg) return;
-                        let aiScaleX, aiScaleY, aiLeft, aiTop, aiOriginX, aiOriginY;
-                        if (canvas.backgroundImage) {
-                            // Perfect fit to the original background scale and position
-                            aiScaleX = (canvas.backgroundImage.width * canvas.backgroundImage.scaleX) / aiImg.width;
-                            aiScaleY = (canvas.backgroundImage.height * canvas.backgroundImage.scaleY) / aiImg.height;
-                            aiLeft = 0;
-                            aiTop = 0;
-                            aiOriginX = 'left';
-                            aiOriginY = 'top';
-                        } else {
-                            aiScaleX = (canvas.width * 0.6) / aiImg.width;
-                            aiScaleY = aiScaleX;
-                            aiLeft = canvas.width / 2;
-                            aiTop = canvas.height / 2;
-                            aiOriginX = 'center';
-                            aiOriginY = 'center';
-                        }
-
-                        aiImg.set({
-                            scaleX: aiScaleX,
-                            scaleY: aiScaleY,
-                            left: aiLeft,
-                            top: aiTop,
-                            originX: aiOriginX,
-                            originY: aiOriginY,
-                            hasControls: true,
-                            hasBorders: true,
-                            borderColor: '#6366f1',
-                            cornerColor: '#6366f1',
-                            transparentCorners: false,
-                            cornerSize: 8,
-                            cornerStyle: 'circle'
-                        });
-                        canvas.add(aiImg);
-                        canvas.setActiveObject(aiImg);
-                        canvas.renderAll();
-                    }, { crossOrigin: 'anonymous' });
-                }
-        } catch (error) {
-            loadingOverlay.classList.add('hidden');
-            generateBtn.disabled = false;
-            setTimeout(() => {
-                alert("サーバー通信エラー: " + error);
-            }, 50);
+        if (!prompt) {
+            alert("AIへの指示（プロンプト）を入力してください。");
+            return;
         }
-    });
 
-    // --- Step 3: Canvas Resets ---
-    resetBtn.addEventListener('click', () => {
-        canvas.clear();
-        canvas.setBackgroundImage(null, canvas.renderAll.bind(canvas));
-        fileInput.value = '';
-        addressInput.value = '';
-        currentImageSrc = null;
-        
-        // Reset dimensions
-        dimensionGroup = null;
-        dimensionsVisible = false;
-        dimensionToggleBtn.innerHTML = '<i class="fa-solid fa-ruler"></i> 寸法 (OFF)';
-        dimensionToggleBtn.style.color = 'var(--text-primary)';
-        dimensionToggleBtn.style.borderColor = 'var(--border-color)';
-        
-        goToStep(1);
-    });
-
-    // --- Layer Operations (The Magic) ---
-
-    // --- モード切替の排他制御リセット ---
-    function resetToolModes() {
-        // 解体ブラシモードOFF
-        isDemolitionMode = false;
-        canvas.isDrawingMode = false;
-        demolitionBrushBtn.style.color = 'var(--text-primary)';
-        demolitionBrushBtn.style.borderColor = 'var(--border-color)';
-        executeDemolitionBtn.classList.add('hidden');
-        
-        // SAMモードON (デフォルト)
-        isSAMMode = true;
-    }
-
-    // Demolition Brush (Inpainting Mask Mock)
-    demolitionBrushBtn.addEventListener('click', () => {
-        const wasDemolition = isDemolitionMode;
-        resetToolModes();
-        
-        if (!wasDemolition) {
-            isDemolitionMode = true;
-            isSAMMode = false; // 解体ブラシ時はSAMをOFF
-            canvas.isDrawingMode = true;
-            
-            demolitionBrushBtn.style.color = '#ef4444';
-            demolitionBrushBtn.style.borderColor = '#ef4444';
-            executeDemolitionBtn.classList.remove('hidden');
-            
-            // Set brush properties (semi-transparent red)
-            canvas.freeDrawingBrush = new fabric.PencilBrush(canvas);
-            canvas.freeDrawingBrush.color = 'rgba(239, 68, 68, 0.5)';
-            canvas.freeDrawingBrush.width = 30;
-        }
-    });
-
-    // 解体ブラシ：長押しで塗る＆タッチで消す仕様
-    canvas.on('mouse:down', function(o) {
-        if (isSpaceDown || (o.e && o.e.altKey)) return;
-        if (!isDemolitionMode) return;
-    });
-
-    canvas.on('path:created', function(opt) {
-        if (isDemolitionMode) {
-            const newPath = opt.path;
-            // 単なるクリック（点）はパスの頂点数が少ない
-            if (newPath.path && newPath.path.length <= 4) {
-                // ゴミパス（点）を削除
-                canvas.remove(newPath);
-                
-                // クリック位置
-                const pointer = { x: newPath.left + newPath.width / 2, y: newPath.top + newPath.height / 2 };
-                
-                // 重なる赤いパスを削除（消しゴム機能）
-                const objects = canvas.getObjects();
-                for (let i = objects.length - 1; i >= 0; i--) {
-                    const obj = objects[i];
-                    if (obj.isDemolitionPath && obj !== newPath) {
-                        if (obj.containsPoint(pointer)) {
-                            canvas.remove(obj);
-                            break; // 1つ消したら終了
-                        }
-                    }
-                }
-                canvas.renderAll();
-            } else {
-                // ドラッグで描かれた正常なパス
-                newPath.set({ 
-                    isDemolitionPath: true, 
-                    selectable: false,
-                    evented: false
-                });
-            }
-        }
-    });
-
-    executeDemolitionBtn.addEventListener('click', () => {
         // --- Mask Generation Logic ---
         let finalMaskB64 = null;
 
-        if (window.lastGeneratedAiMask) {
-            finalMaskB64 = window.lastGeneratedAiMask;
-        } else {
-            // 1. Save original background state
-            const originalBg = canvas.backgroundImage;
-            const originalBgColor = canvas.backgroundColor;
-            canvas.setBackgroundImage(null, () => {});
-            canvas.backgroundColor = 'black';
-            
-            // 2. Hide non-mask objects and turn red paths white
-            const objects = canvas.getObjects();
-            const hiddenObjects = [];
-            const maskPaths = [];
-            
-            objects.forEach(obj => {
-                if (obj instanceof fabric.Path && obj.stroke === 'rgba(239, 68, 68, 0.5)') {
-                    maskPaths.push({
-                        obj: obj,
-                        originalStroke: obj.stroke,
-                        originalOpacity: obj.opacity
-                    });
-                    obj.set('stroke', 'white');
-                    obj.set('opacity', 1); // Make it fully opaque
-                } else {
-                    if (obj.visible) {
-                        hiddenObjects.push(obj);
-                        obj.set('visible', false);
-                    }
+        // 1. Save original background state
+        const originalBg = canvas.backgroundImage;
+        const originalBgColor = canvas.backgroundColor;
+        
+        // Use SAM mask as background if exists, else black
+        let maskBgPromise = new Promise((resolve) => {
+            if (window.lastGeneratedAiMask) {
+                fabric.Image.fromURL(window.lastGeneratedAiMask, function(img) {
+                    img.set({ scaleX: canvas.width / img.width, scaleY: canvas.height / img.height, originX: 'left', originY: 'top' });
+                    canvas.setBackgroundImage(img, () => { resolve(); });
+                });
+            } else {
+                canvas.setBackgroundImage(null, () => {});
+                canvas.backgroundColor = 'black';
+                resolve();
+            }
+        });
+
+        await maskBgPromise;
+        
+        // 2. Hide non-mask objects and turn red paths white
+        const objects = canvas.getObjects();
+        const hiddenObjects = [];
+        const maskPaths = [];
+        
+        objects.forEach(obj => {
+            // Include brush paths
+            if (obj instanceof fabric.Path && obj.stroke === 'rgba(239, 68, 68, 0.5)') {
+                maskPaths.push({
+                    obj: obj,
+                    originalStroke: obj.stroke,
+                    originalOpacity: obj.opacity
+                });
+                obj.set('stroke', 'white');
+                obj.set('opacity', 1); // Make it fully opaque
+            } else {
+                if (obj.visible) {
+                    hiddenObjects.push(obj);
+                    obj.set('visible', false);
                 }
-            });
-            
-            // 3. Render and get base64 mask
-            canvas.renderAll();
-            finalMaskB64 = canvas.toDataURL({ format: 'png' });
-            
-            // 4. Revert everything back
-            canvas.setBackgroundImage(originalBg, () => {});
-            canvas.backgroundColor = originalBgColor;
-            maskPaths.forEach(item => {
-                item.obj.set('stroke', item.originalStroke);
-                item.obj.set('opacity', item.originalOpacity);
-                canvas.remove(item.obj);
-            });
-            hiddenObjects.forEach(obj => obj.set('visible', true));
-            canvas.renderAll();
-        }
+            }
+        });
+        
+        // 3. Render and get base64 mask
+        canvas.renderAll();
+        finalMaskB64 = canvas.toDataURL({ format: 'png' });
+        
+        // 4. Revert everything back
+        canvas.setBackgroundImage(originalBg, () => {});
+        canvas.backgroundColor = originalBgColor;
+        maskPaths.forEach(item => {
+            item.obj.set('stroke', item.originalStroke);
+            item.obj.set('opacity', item.originalOpacity);
+        });
+        hiddenObjects.forEach(obj => obj.set('visible', true));
+        canvas.renderAll();
         
         // --- Execution ---
-        loadingText.textContent = "AIが指定領域の建物を撤去し、背景を自動補完（インペインティング）しています...";
+        aiBuildingModal.classList.add('hidden');
+        loadingText.textContent = "AIが指定領域を処理しています...";
         loadingOverlay.classList.remove('hidden');
-        executeDemolitionBtn.disabled = true;
+        generateBtn.disabled = true;
 
         fetch('/api/generate_building', {
             method: 'POST',
@@ -802,8 +624,8 @@ document.addEventListener('DOMContentLoaded', () => {
             body: JSON.stringify({
                 image: canvas.backgroundImage ? canvas.backgroundImage.getSrc() : "",
                 mask: finalMaskB64, 
-                action_type: 'demolition',
-                prompt: "Seamless urban background, natural continuation of the city streets, empty lot, clear sky, matching surrounding buildings, photorealistic"
+                action_type: 'generation',
+                prompt: `${prompt}, 【Absolute Rule: Keep the original background environment strictly unchanged, exactly preserve all surroundings, do not alter adjacent buildings or roads】, architectural photography, highly detailed`
             })
         })
         .then(res => {
@@ -816,14 +638,13 @@ document.addEventListener('DOMContentLoaded', () => {
         })
         .then(data => {
             loadingOverlay.classList.add('hidden');
-            executeDemolitionBtn.disabled = false;
+            generateBtn.disabled = false;
             
             // Turn off drawing mode
             isDemolitionMode = false;
             canvas.isDrawingMode = false;
             demolitionBrushBtn.style.color = 'var(--text-primary)';
             demolitionBrushBtn.style.borderColor = 'var(--border-color)';
-            executeDemolitionBtn.classList.add('hidden');
 
             if (data.error) {
                 setTimeout(() => {
@@ -853,392 +674,11 @@ document.addEventListener('DOMContentLoaded', () => {
         })
         .catch(err => {
             loadingOverlay.classList.add('hidden');
-            executeDemolitionBtn.disabled = false;
+            generateBtn.disabled = false;
             setTimeout(() => {
                 alert("通信エラーが発生しました。\n詳細: " + err.message);
             }, 100);
         });
-    });
-
-    // Dimension Toggle (Mock BIM Feature)
-    dimensionToggleBtn.addEventListener('click', () => {
-        if (!canvas.backgroundImage) return;
-
-        dimensionsVisible = !dimensionsVisible;
-
-        if (dimensionsVisible) {
-            // Update button style
-            dimensionToggleBtn.innerHTML = '<i class="fa-solid fa-ruler"></i> 寸法 (ON)';
-            dimensionToggleBtn.style.color = '#4ade80';
-            dimensionToggleBtn.style.borderColor = '#4ade80';
-
-            // Create mock dimensions if they don't exist
-            if (!dimensionGroup) {
-                const bg = canvas.backgroundImage;
-                const objects = [];
-
-                // Helper to create a dimension line with text
-                const createDimension = (x1, y1, x2, y2, textStr, offsetLabelX, offsetLabelY) => {
-                    const line = new fabric.Line([x1, y1, x2, y2], {
-                        stroke: '#ef4444', // Red dimension lines
-                        strokeWidth: 2,
-                        selectable: false,
-                        evented: false
-                    });
-                    
-                    // Small ticks at ends
-                    const tickSize = 10;
-                    const isVertical = x1 === x2;
-                    const tick1 = new fabric.Line(
-                        isVertical ? [x1 - tickSize, y1, x1 + tickSize, y1] : [x1, y1 - tickSize, x1, y1 + tickSize],
-                        { stroke: '#ef4444', strokeWidth: 2, selectable: false }
-                    );
-                    const tick2 = new fabric.Line(
-                        isVertical ? [x2 - tickSize, y2, x2 + tickSize, y2] : [x2, y2 - tickSize, x2, y2 + tickSize],
-                        { stroke: '#ef4444', strokeWidth: 2, selectable: false }
-                    );
-
-                    const textBg = new fabric.Rect({
-                        left: (x1 + x2) / 2 + offsetLabelX - 5,
-                        top: (y1 + y2) / 2 + offsetLabelY - 5,
-                        fill: 'rgba(0,0,0,0.7)',
-                        width: 70,
-                        height: 25,
-                        rx: 4,
-                        ry: 4,
-                        originX: 'center',
-                        originY: 'center',
-                        selectable: false
-                    });
-
-                    const text = new fabric.Text(textStr, {
-                        left: (x1 + x2) / 2 + offsetLabelX,
-                        top: (y1 + y2) / 2 + offsetLabelY,
-                        fontSize: 16,
-                        fontFamily: 'Inter',
-                        fill: '#ffffff',
-                        originX: 'center',
-                        originY: 'center',
-                        selectable: false
-                    });
-
-                    objects.push(line, tick1, tick2, textBg, text);
-                };
-
-                // Add some mock dimensions based on canvas size
-                // Example: Building height (vertical line on the left side)
-                createDimension(
-                    bg.width * 0.2, bg.height * 0.1, 
-                    bg.width * 0.2, bg.height * 0.8, 
-                    "H: 28.5m", -45, 0
-                );
-                
-                // Example: Road width (horizontal line near bottom)
-                createDimension(
-                    bg.width * 0.3, bg.height * 0.9, 
-                    bg.width * 0.7, bg.height * 0.9, 
-                    "W: 6.0m", 0, 20
-                );
-
-                dimensionGroup = new fabric.Group(objects, {
-                    selectable: false,
-                    evented: false
-                });
-                canvas.add(dimensionGroup);
-            }
-            dimensionGroup.set({ visible: true });
-            
-        } else {
-            // Hide
-            dimensionToggleBtn.innerHTML = '<i class="fa-solid fa-ruler"></i> 寸法 (OFF)';
-            dimensionToggleBtn.style.color = 'var(--text-primary)';
-            dimensionToggleBtn.style.borderColor = 'var(--border-color)';
-            if (dimensionGroup) {
-                dimensionGroup.set({ visible: false });
-            }
-        }
-        canvas.renderAll();
-    });
-
-
-    canvas.on('mouse:down', function(opt) {
-        if (isSpaceDown || (opt.e && opt.e.altKey)) return;
-        if (isDemolitionMode) return; // 解体ブラシ中は動作しない
-        if (!isSAMMode) return; // SAM抽出モードでない場合は動作しない
-
-        if(canvas.backgroundImage) {
-            // 他のオブジェクトをクリックした場合は無視
-            if (opt.target && opt.target !== canvas.backgroundImage && opt.target.customType !== 'ai-mask-visual') {
-                return;
-            }
-
-            if (window.isSamAnalyzing) {
-                loadingText.textContent = "AIが建物のブロック構造を事前解析中です（完了まで約30秒）...";
-                loadingOverlay.classList.remove('hidden');
-                return;
-            }
-            
-            if (!window.samMaskUrls || window.samMaskUrls.length === 0) {
-                alert("自動ブロック抽出に失敗したか、準備ができていません。手動の「解体ブラシ」をご利用ください。");
-                return;
-            }
-
-            let pointer = canvas.getPointer(opt.e);
-            const bg = canvas.backgroundImage;
-            const scale = bg.scaleX || 1;
-            
-            // Map pointer to original image coordinates (accounting for origin dynamically)
-            let bgLeft = bg.left;
-            let bgTop = bg.top;
-            if (bg.originX === 'center') bgLeft -= (bg.width * scale) / 2;
-            if (bg.originY === 'center') bgTop -= (bg.height * scale) / 2;
-            const imgX = Math.floor((pointer.x - bgLeft) / scale);
-            const imgY = Math.floor((pointer.y - bgTop) / scale);
-            
-            if (imgX < 0 || imgY < 0 || imgX >= bg.width || imgY >= bg.height) return;
-
-            // 初回クリック時の初期化
-            if (!isAccumulatedCanvasInit) {
-                accumulatedMaskCanvas.width = bg.width;
-                accumulatedMaskCanvas.height = bg.height;
-                accumulatedMaskCtx.fillStyle = "black";
-                accumulatedMaskCtx.fillRect(0, 0, accumulatedMaskCanvas.width, accumulatedMaskCanvas.height);
-                isAccumulatedCanvasInit = true;
-                window.lastGeneratedAiMask = null;
-            }
-
-            // --- 画像圧縮ロジック (Max 1280px) ---
-            const maxDim = 1280;
-            const origWidth = bg.width;
-            const origHeight = bg.height;
-            let newWidth = origWidth;
-            let newHeight = origHeight;
-            
-            if (Math.max(origWidth, origHeight) > maxDim) {
-                if (origWidth > origHeight) {
-                    newWidth = maxDim;
-                    newHeight = Math.round((origHeight * maxDim) / origWidth);
-                } else {
-                    newHeight = maxDim;
-                    newWidth = Math.round((origWidth * maxDim) / origHeight);
-                }
-            }
-            
-            loadingOverlay.classList.remove('hidden');
-            loadingText.textContent = "クリックしたブロックを高速抽出中...";
-            
-            fetch('/api/segment_pick', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    mask_urls: window.samMaskUrls,
-                    x: Math.round(imgX * (newWidth / origWidth)),
-                    y: Math.round(imgY * (newHeight / origHeight))
-                })
-            })
-            .then(res => {
-                if (!res.ok) {
-                    return res.text().then(text => {
-                        throw new Error(`HTTP ${res.status}: ${text.substring(0, 100)}`);
-                    });
-                }
-                return res.json();
-            })
-            .then(data => {
-                if (data.error) {
-                    loadingOverlay.classList.add('hidden');
-                    setTimeout(() => alert("APIエラー: " + data.error), 100);
-                } else {
-                    // APIから返ってきたマスク画像を読み込み、既存のマスクと合成する
-                    const newMaskImg = new Image();
-                    newMaskImg.crossOrigin = "anonymous";
-                    newMaskImg.onload = () => {
-                        samMaskCanvas.width = newMaskImg.width;
-                        samMaskCanvas.height = newMaskImg.height;
-                        samMaskCtx.drawImage(newMaskImg, 0, 0);
-                        
-                        accumulatedMaskCtx.globalCompositeOperation = "source-over";
-                        accumulatedMaskCtx.drawImage(samMaskCanvas, 0, 0, origWidth, origHeight);
-                        accumulatedMaskCtx.globalCompositeOperation = "source-over";
-                        
-                        const accImgData = accumulatedMaskCtx.getImageData(0, 0, origWidth, origHeight);
-                        const accData = accImgData.data;
-                        
-                        const visualCanvas = document.createElement('canvas');
-                        visualCanvas.width = origWidth;
-                        visualCanvas.height = origHeight;
-                        const visualCtx = visualCanvas.getContext('2d');
-                        const visualImgData = visualCtx.createImageData(origWidth, origHeight);
-                        const vData = visualImgData.data;
-                        
-                        let hasAnyMask = false;
-                        for (let i = 0; i < accData.length; i += 4) {
-                            if (accData[i] > 128) {
-                                hasAnyMask = true;
-                                vData[i] = 239; vData[i+1] = 68; vData[i+2] = 68; vData[i+3] = 128;
-                                accData[i] = 255; accData[i+1] = 255; accData[i+2] = 255; accData[i+3] = 255;
-                            } else {
-                                vData[i] = 0; vData[i+1] = 0; vData[i+2] = 0; vData[i+3] = 0;
-                                accData[i] = 0; accData[i+1] = 0; accData[i+2] = 0; accData[i+3] = 255;
-                            }
-                        }
-                        
-                        accumulatedMaskCtx.putImageData(accImgData, 0, 0);
-                        visualCtx.putImageData(visualImgData, 0, 0);
-                        
-                        const objects = canvas.getObjects();
-                        for (let i = objects.length - 1; i >= 0; i--) {
-                            if (objects[i].customType === 'ai-mask-visual') {
-                                canvas.remove(objects[i]);
-                            }
-                        }
-                        
-                        if (hasAnyMask) {
-                            window.lastGeneratedAiMask = accumulatedMaskCanvas.toDataURL('image/png');
-                            fabric.Image.fromURL(visualCanvas.toDataURL('image/png'), function(img) {
-                                img.set({ scaleX: scale, scaleY: scale, left: 0, top: 0, originX: 'left', originY: 'top', customType: 'ai-mask-visual', selectable: false, evented: false });
-                                canvas.add(img);
-                                canvas.renderAll();
-                                loadingOverlay.classList.add('hidden');
-                                
-                                // 抽出に成功したら、すぐにAI合成モーダルを立ち上げてシームレスに促す
-                                setTimeout(() => {
-                                    document.getElementById('aiBuildingModal').classList.remove('hidden');
-                                }, 300);
-                            });
-                        } else {
-                            window.lastGeneratedAiMask = null;
-                            canvas.renderAll();
-                            loadingOverlay.classList.add('hidden');
-                        }
-                    };
-                    newMaskImg.src = data.mask_url;
-                }
-            })
-            .catch(err => {
-                loadingOverlay.classList.add('hidden');
-                setTimeout(() => alert("通信エラーが発生しました。\n詳細: " + err.message), 100);
-            });
-        }
-    });
-
-    // Download Image
-    downloadBtn.addEventListener('click', () => {
-        if (!canvas.backgroundImage) {
-            alert("ダウンロードする画像がありません");
-            return;
-        }
-        
-        // Temporarily deselect all objects so bounding boxes don't show up in the image
-        canvas.discardActiveObject();
-        canvas.renderAll();
-
-        const dataURL = canvas.toDataURL({
-            format: 'png',
-            quality: 1
-        });
-        
-        const link = document.createElement('a');
-        link.download = 'nespakono_result.png';
-        link.href = dataURL;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    });
-
-    // --- Sidebar Menu Logic (Mock) ---
-    const sidebarItems = document.querySelectorAll('.tool-list li:not(.disabled)');
-    const itemGeneratorPanel = document.getElementById('itemGeneratorPanel');
-    const blueprintPanel = document.getElementById('blueprintPanel');
-    const generateItemBtn = document.getElementById('generateItemBtn');
-    const itemPrompt = document.getElementById('itemPrompt');
-    const closeBlueprintBtn = document.getElementById('closeBlueprintBtn');
-    const generate3DBuildingBtn = document.getElementById('generate3DBuildingBtn');
-
-    sidebarItems.forEach(item => {
-        item.addEventListener('click', () => {
-            // Remove active class from all
-            sidebarItems.forEach(li => li.classList.remove('active'));
-            // Add active class to clicked
-            item.classList.add('active');
-
-            const toolName = item.getAttribute('data-tool');
-            
-            // Item Generator logic
-            if (toolName === 'fence') { // "アイテム生成" is using data-tool="fence"
-                if (currentStep === 3) {
-                    itemGeneratorPanel.classList.remove('hidden');
-                    blueprintPanel.classList.add('hidden');
-                    gmapsPanel.classList.add('hidden');
-                } else {
-                    alert("まずはベース画像を設定し、キャンバス画面（Step 3）に進んでください。");
-                }
-            } else if (toolName === '2d-to-3d') {
-                if (currentStep === 3) {
-                    blueprintPanel.classList.remove('hidden');
-                    itemGeneratorPanel.classList.add('hidden');
-                    gmapsPanel.classList.add('hidden');
-                } else {
-                    alert("まずはベース画像を設定し、キャンバス画面（Step 3）に進んでください。");
-                }
-            } else if (toolName === 'gmaps') {
-                gmapsPanel.classList.remove('hidden');
-                itemGeneratorPanel.classList.add('hidden');
-                blueprintPanel.classList.add('hidden');
-            } else {
-                itemGeneratorPanel.classList.add('hidden');
-                blueprintPanel.classList.add('hidden');
-                gmapsPanel.classList.add('hidden');
-            }
-        });
-    });
-
-    closeBlueprintBtn.addEventListener('click', () => {
-        blueprintPanel.classList.add('hidden');
-    });
-
-    // Generate 3D Building Mock
-    generate3DBuildingBtn.addEventListener('click', () => {
-        blueprintPanel.classList.add('hidden');
-        loadingOverlay.classList.remove('hidden');
-        loadingText.textContent = `AIが2D図面を解析し、3Dパースを生成しています...`;
-
-        setTimeout(() => {
-            loadingOverlay.classList.add('hidden');
-            
-            // Dummy high-quality modern house (as a proxy for 3D model)
-            // In a real app, this would be a rendered image with transparent background
-            const dummyBuildingUrl = 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?q=80&w=600&auto=format&fit=crop';
-
-            fabric.Image.fromURL(dummyBuildingUrl, function(mockImg) {
-                mockImg.set({
-                    left: canvas.width / 2,
-                    top: canvas.height / 2,
-                    originX: 'center',
-                    originY: 'center',
-                    scaleX: 0.7,
-                    scaleY: 0.7,
-                    cornerStyle: 'circle',
-                    cornerColor: '#eab308',
-                    borderColor: '#eab308',
-                    transparentCorners: false,
-                    hasControls: true,
-                    hasBorders: true,
-                    shadow: new fabric.Shadow({
-                        color: 'rgba(0,0,0,0.8)',
-                        blur: 20,
-                        offsetX: 0,
-                        offsetY: 15
-                    })
-                });
-                canvas.add(mockImg);
-                canvas.setActiveObject(mockImg);
-                canvas.renderAll();
-                
-                resultMessage.style.color = '#eab308';
-                resultMessage.textContent = `【Enterprise限定】図面から3Dパースを生成し、配置しました！`;
-            });
-        }, 2500);
     });
 
     // Generate Item Mock
