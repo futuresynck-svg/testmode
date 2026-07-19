@@ -803,7 +803,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 image: canvas.backgroundImage ? canvas.backgroundImage.getSrc() : "",
                 mask: finalMaskB64, 
                 action_type: 'demolition',
-                prompt: "Seamless background, natural continuation of the surroundings, empty space, clear sky, empty ground, neighborhood landscape, photorealistic, no buildings"
+                prompt: "Seamless urban background, natural continuation of the city streets, empty lot, clear sky, matching surrounding buildings, photorealistic"
             })
         })
         .then(res => {
@@ -831,6 +831,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 100);
             } else {
                 saveHistory(); // Save state before changing
+                
+                // Clear the visual red masks from canvas
+                const objects = canvas.getObjects();
+                for (let i = objects.length - 1; i >= 0; i--) {
+                    if (objects[i].customType === 'ai-mask-visual' || objects[i].isDemolitionPath) {
+                        canvas.remove(objects[i]);
+                    }
+                }
+                
                 fabric.Image.fromURL(data.image_url, function(bgImg) {
                     if (!bgImg) return;
                     const scale = maxCanvasWidth / bgImg.width;

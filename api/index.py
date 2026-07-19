@@ -225,6 +225,9 @@ def generate_building():
             "prompt_strength": 0.99 if action_type == 'demolition' else 0.85
         }
         
+        if action_type == 'demolition' and "Seamless background" in prompt:
+            inputs["prompt"] = "Seamless urban background, natural continuation of the city streets, empty lot, clear sky, matching surrounding buildings, photorealistic"
+        
         # 更地化の場合は、建物を生成しないようにネガティブプロンプトを強く指定
         if action_type == 'demolition':
             inputs["negative_prompt"] = "building, house, structure, architecture, object, artifact, distortion, blurry, weird textures, roof, wall"
