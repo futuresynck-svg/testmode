@@ -460,6 +460,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Step 1: Image Input Logic ---
 
     function setImageSourceAndProceed(src) {
+        // --- 処理開始の瞬間にローディングを表示 ---
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const loadingText = document.getElementById('loadingText');
+        if (loadingOverlay && loadingText) {
+            loadingText.textContent = "AIが建物のブロック構造を事前解析中です（完了まで約30秒）...";
+            loadingOverlay.classList.remove('hidden');
+        }
+
         currentImageSrc = src;
         
         window.samMaskUrls = null;
@@ -505,8 +513,6 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // バックグラウンドで解析開始
             function preloadWithRetry() {
-                loadingText.textContent = "AIが画像を事前解析中です...完了までしばらくお待ちください。";
-                loadingOverlay.classList.remove('hidden');
                 console.log("バックグラウンド解析を開始します...");
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 300000); // 5分でフロント側でもタイムアウト
