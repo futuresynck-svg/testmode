@@ -778,13 +778,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 captureMapBtn.classList.remove('hidden');
                 addressInput.value = '';
             } else {
+                loadingOverlay.classList.add('hidden');
                 alert("キャプチャエラー: " + (data.error || "不明なエラーが発生しました。"));
             }
         } catch (error) {
             console.error("Fetch error:", error);
-            alert("サーバー通信エラー: バックエンドサーバーが起動しているか確認してください。");
-        } finally {
             loadingOverlay.classList.add('hidden');
+            alert("サーバー通信エラー: バックエンドサーバーが起動しているか確認してください。");
         }
     });
     // --- Modal Logic ---
