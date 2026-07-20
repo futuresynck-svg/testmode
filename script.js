@@ -27,6 +27,63 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     initGoogleMaps();
 
+    // ======= Progress Bar Utilities =======
+    let progressInterval;
+    function startFakeProgress(durationMs, text) {
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const loadingText = document.getElementById('loadingText');
+        const progressContainer = document.getElementById('loadingProgressContainer');
+        const progressBar = document.getElementById('loadingProgressBar');
+        const progressText = document.getElementById('loadingProgressText');
+        
+        if (loadingOverlay && loadingText) {
+            loadingText.textContent = text || "AI処理中...しばらくお待ちください";
+            loadingOverlay.classList.remove('hidden');
+        }
+        
+        if (!progressContainer || !progressBar) return;
+        progressContainer.classList.remove('hidden');
+        progressText.classList.remove('hidden');
+        
+        let progress = 0;
+        progressBar.style.width = '0%';
+        progressText.textContent = '0%';
+        
+        const intervalTime = 500;
+        const step = 90 / (durationMs / intervalTime);
+        
+        clearInterval(progressInterval);
+        progressInterval = setInterval(() => {
+            progress += step;
+            if (progress > 95) progress = 95;
+            progressBar.style.width = `${progress}%`;
+            progressText.textContent = `${Math.floor(progress)}%`;
+        }, intervalTime);
+    }
+
+    function stopFakeProgress(success) {
+        clearInterval(progressInterval);
+        const progressBar = document.getElementById('loadingProgressBar');
+        const progressText = document.getElementById('loadingProgressText');
+        const progressContainer = document.getElementById('loadingProgressContainer');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        
+        if (progressBar && progressText) {
+            if (success) {
+                progressBar.style.width = '100%';
+                progressText.textContent = '100%';
+            }
+            setTimeout(() => {
+                if (loadingOverlay) loadingOverlay.classList.add('hidden');
+                if (progressContainer) progressContainer.classList.add('hidden');
+                if (progressText) progressText.classList.add('hidden');
+                progressBar.style.width = '0%';
+            }, 500);
+        } else if (loadingOverlay) {
+            loadingOverlay.classList.add('hidden');
+        }
+    }
+
     // Wizard Elements
     const step1View = document.getElementById('step1View');
     const step3View = document.getElementById('step3View');
@@ -324,8 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                     
-                    loadingOverlay.classList.remove('hidden');
-                    loadingText.textContent = "ブロックを抽出中...";
+                    startFakeProgress(5000, "ブロックを抽出中...");
                     
                     fetch('/api/segment_pick', {
                         method: 'POST',
@@ -339,12 +395,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     .then(res => res.json())
                     .then(data => {
                         if (data.error) {
-                            loadingOverlay.classList.add('hidden');
+                            stopFakeProgress(false);
                             alert("APIエラー: " + data.error);
                         } else {
                             // Check if this mask was already selected
                             if (window.activeSamMasks.has(data.mask_url)) {
-                                loadingOverlay.classList.add('hidden');
+                                stopFakeProgress(true);
                                 return; 
                             }
 
@@ -384,21 +440,21 @@ document.addEventListener('DOMContentLoaded', () => {
                                         canvas.add(img);
                                         canvas.renderAll();
                                         updateAccumulatedMask();
-                                        loadingOverlay.classList.add('hidden');
+                                        stopFakeProgress(true);
                                         
                                         setTimeout(() => {
                                             document.getElementById('aiBuildingModal').classList.remove('hidden');
                                         }, 100);
                                     });
                                 } else {
-                                    loadingOverlay.classList.add('hidden');
+                                    stopFakeProgress(true);
                                 }
                             };
                             newMaskImg.src = data.mask_url;
                         }
                     })
                     .catch(err => {
-                        loadingOverlay.classList.add('hidden');
+                        stopFakeProgress(false);
                         console.error(err);
                     });
                 }
@@ -461,12 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setImageSourceAndProceed(src) {
         // --- 処理開始の瞬間にローディングを表示 ---
-        const loadingOverlay = document.getElementById('loadingOverlay');
-        const loadingText = document.getElementById('loadingText');
-        if (loadingOverlay && loadingText) {
-            loadingText.textContent = "AIが建物のブロック構造を事前解析中です（完了まで約30秒）...";
-            loadingOverlay.classList.remove('hidden');
-        }
+        startFakeProgress(30000, "AIが建物のブロック構造を事前解析中です（完了まで約30秒）...");
 
         currentImageSrc = src;
         
@@ -542,20 +593,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.log("全自動解析完了:", data.mask_urls.length, "個のブロックを検出");
                     
                     // ローディング画面を消す
-                    loadingOverlay.classList.add('hidden');
+                    stopFakeProgress(true);
                     
                     // ユーザーがクリックして待機していた場合は完了を知らせる
-                    if (loadingText.textContent.includes("事前解析中")) {
+                    if (document.getElementById('loadingText').textContent.includes("事前解析中")) {
                         setTimeout(() => {
                             alert("事前解析が完了しました！キャンバス上の抽出したい建物をクリックしてください。");
-                        }, 100);
+                        }, 500);
                     }
                 })
                 .catch(err => {
                     window.isSamAnalyzing = false;
                     window.samMaskUrls = null; // エラー時は明示的にnullにする
                     console.error("全自動解析エラー:", err);
-                    loadingOverlay.classList.add('hidden'); // エラー時にも確実ローディングを消す
+                    stopFakeProgress(false); // エラー時にも確実ローディングを消す
                     
                     setTimeout(() => {
                         if (err.name === 'AbortError') {
