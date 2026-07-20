@@ -32,15 +32,47 @@ document.addEventListener('DOMContentLoaded', () => {
     function startFakeProgress(durationMs, text) {
         const loadingOverlay = document.getElementById('loadingOverlay');
         const loadingText = document.getElementById('loadingText');
-        const progressContainer = document.getElementById('loadingProgressContainer');
-        const progressBar = document.getElementById('loadingProgressBar');
-        const progressText = document.getElementById('loadingProgressText');
         
         if (loadingOverlay && loadingText) {
             loadingText.textContent = text || "AI処理中...しばらくお待ちください";
             loadingOverlay.classList.remove('hidden');
         }
         
+        let progressContainer = document.getElementById('loadingProgressContainer');
+        let progressBar = document.getElementById('loadingProgressBar');
+        let progressText = document.getElementById('loadingProgressText');
+        
+        // --- Cache Bypass: Dynamically inject if missing ---
+        if (!progressContainer && loadingOverlay) {
+            progressContainer = document.createElement('div');
+            progressContainer.id = 'loadingProgressContainer';
+            progressContainer.style.width = '80%';
+            progressContainer.style.maxWidth = '400px';
+            progressContainer.style.height = '10px';
+            progressContainer.style.background = 'rgba(255,255,255,0.1)';
+            progressContainer.style.borderRadius = '5px';
+            progressContainer.style.overflow = 'hidden';
+            progressContainer.style.margin = '10px auto';
+            
+            progressBar = document.createElement('div');
+            progressBar.id = 'loadingProgressBar';
+            progressBar.style.width = '0%';
+            progressBar.style.height = '100%';
+            progressBar.style.background = '#10b981';
+            progressBar.style.transition = 'width 0.2s ease';
+            progressContainer.appendChild(progressBar);
+            
+            progressText = document.createElement('p');
+            progressText.id = 'loadingProgressText';
+            progressText.style.marginTop = '5px';
+            progressText.style.fontSize = '0.9rem';
+            progressText.style.color = '#ccc';
+            progressText.textContent = '0%';
+            
+            loadingOverlay.appendChild(progressContainer);
+            loadingOverlay.appendChild(progressText);
+        }
+
         if (!progressContainer || !progressBar) return;
         progressContainer.classList.remove('hidden');
         progressText.classList.remove('hidden');
@@ -58,6 +90,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (progress > 95) progress = 95;
             progressBar.style.width = `${progress}%`;
             progressText.textContent = `${Math.floor(progress)}%`;
+            
+            if (progress >= 95) {
+                clearInterval(progressInterval);
+            }
         }, intervalTime);
     }
 
