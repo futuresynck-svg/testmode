@@ -699,8 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        loadingText.textContent = "住所からストリートビューを検索中...";
-        loadingOverlay.classList.remove('hidden');
+        startFakeProgress(10000, "住所からストリートビューを検索中...");
         
         try {
             const geocoder = new google.maps.Geocoder();
@@ -965,8 +964,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // --- Execution ---
         aiBuildingModal.classList.add('hidden');
-        loadingText.textContent = "AIが指定領域を処理しています...";
-        loadingOverlay.classList.remove('hidden');
+        startFakeProgress(30000, "AIが指定領域を処理しています...");
         generateBtn.disabled = true;
 
         fetch('/api/generate_building', {
@@ -988,7 +986,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return res.json();
         })
         .then(data => {
-            loadingOverlay.classList.add('hidden');
+            stopFakeProgress(true);
             generateBtn.disabled = false;
             
             // Turn off drawing mode
@@ -1016,7 +1014,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         })
         .catch(err => {
-            loadingOverlay.classList.add('hidden');
+            stopFakeProgress(false);
             generateBtn.disabled = false;
             setTimeout(() => {
                 alert("通信エラーが発生しました。\n詳細: " + err.message);
