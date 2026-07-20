@@ -734,8 +734,82 @@ document.addEventListener('DOMContentLoaded', () => {
     const openAiModalBtn = document.getElementById('openAiModalBtn');
     const closeAiModalBtn = document.getElementById('closeAiModalBtn');
 
+    const aiActionSelectionView = document.getElementById('aiActionSelectionView');
+    const aiGenerationSettingsView = document.getElementById('aiGenerationSettingsView');
+    const actionDelete = document.getElementById('actionDelete');
+    const actionMove = document.getElementById('actionMove');
+    const actionGenerate = document.getElementById('actionGenerate');
+    const backToActionSelectionBtn = document.getElementById('backToActionSelectionBtn');
+
     openAiModalBtn.addEventListener('click', () => {
+        aiActionSelectionView.style.display = 'flex';
+        aiGenerationSettingsView.classList.add('hidden');
         aiBuildingModal.classList.remove('hidden');
+    });
+
+    backToActionSelectionBtn.addEventListener('click', () => {
+        aiGenerationSettingsView.classList.add('hidden');
+        aiActionSelectionView.style.display = 'flex';
+    });
+
+    actionGenerate.addEventListener('click', () => {
+        aiActionSelectionView.style.display = 'none';
+        aiGenerationSettingsView.classList.remove('hidden');
+    });
+
+    actionDelete.addEventListener('click', () => {
+        if (!window.lastGeneratedAiMask) {
+            alert("ブロックが選択されていません。");
+            return;
+        }
+        document.getElementById('prompt').value = "Seamless urban background, natural continuation of the city streets, empty lot, clear sky, matching surrounding buildings, photorealistic";
+        aiBuildingModal.classList.add('hidden');
+        generateBtn.click();
+    });
+
+    actionMove.addEventListener('click', () => {
+        if (!window.lastGeneratedAiMask) {
+            alert("ブロックが選択されていません。");
+            return;
+        }
+        
+        // 1. マスクされた領域を新しいfabric.Imageとして抽出する
+        const extractCanvas = document.createElement('canvas');
+        extractCanvas.width = canvas.width;
+        extractCanvas.height = canvas.height;
+        const ctx = extractCanvas.getContext('2d');
+        
+        // 現在の背景画像を描画
+        const origImg = canvas.backgroundImage;
+        if (!origImg) return;
+        ctx.drawImage(origImg.getElement(), 0, 0, canvas.width, canvas.height);
+        
+        // マスク画像で切り抜き(destination-in)
+        const maskImg = new Image();
+        maskImg.onload = () => {
+            ctx.globalCompositeOperation = 'destination-in';
+            ctx.drawImage(maskImg, 0, 0, canvas.width, canvas.height);
+            
+            // 切り抜かれた画像をデータURL化
+            const isolatedObjectB64 = extractCanvas.toDataURL('image/png');
+            
+            // fabric.Imageとして保持（AI生成完了後にキャンバスに追加するため）
+            fabric.Image.fromURL(isolatedObjectB64, (obj) => {
+                obj.set({
+                    left: 0,
+                    top: 0,
+                    selectable: true,
+                    hasControls: true
+                });
+                
+                
+                // 背景をAIで削除（インペイント）
+                document.getElementById('prompt').value = "Seamless urban background, natural continuation of the city streets, empty lot, clear sky, matching surrounding buildings, photorealistic";
+                aiBuildingModal.classList.add('hidden');
+                generateBtn.click();
+            });
+        };
+        maskImg.src = window.lastGeneratedAiMask;
     });
 
     const quickPromptBtns = document.querySelectorAll('.quick-prompt-btn');

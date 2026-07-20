@@ -600,3 +600,5 @@ input[type="range"] {
     text-align: center;
     color: #4ade80;
 }
+
+.action-card:hover { transform: translateY(-5px); border-color: var(--accent-color) !important; background-color: rgba(99, 102, 241, 0.1) !important; }
