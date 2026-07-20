@@ -585,6 +585,13 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Clear previous layers
             canvas.getObjects().forEach(o => canvas.remove(o));
+
+            // 移動アクション用：抽出したオブジェクトがあればキャンバスに追加
+            if (window.pendingExtractedObject) {
+                canvas.add(window.pendingExtractedObject);
+                canvas.setActiveObject(window.pendingExtractedObject);
+                window.pendingExtractedObject = null;
+            }
             
             goToStep(3);
         });
@@ -802,6 +809,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     hasControls: true
                 });
                 
+                window.pendingExtractedObject = obj;
                 
                 // 背景をAIで削除（インペイント）
                 document.getElementById('prompt').value = "Seamless urban background, natural continuation of the city streets, empty lot, clear sky, matching surrounding buildings, photorealistic";
@@ -884,11 +892,22 @@ document.addEventListener('DOMContentLoaded', () => {
         finalMaskB64 = canvas.toDataURL({ format: 'png' });
         
         // 4. Revert everything back
-        canvas.setBackgroundImage(originalBg, () => {});
-        canvas.backgroundColor = originalBgColor;
+        const baseImageB64 = await new Promise((resolve) => {
+            canvas.setBackgroundImage(originalBg, () => {
+                canvas.backgroundColor = originalBgColor;
+                
+                // --- Generate Base Image at exact canvas size ---
+                maskPaths.forEach(item => item.obj.set('visible', false));
+                canvas.renderAll();
+                const b64 = canvas.toDataURL({ format: 'jpeg', quality: 0.9 });
+                resolve(b64);
+            });
+        });
+
         maskPaths.forEach(item => {
             item.obj.set('stroke', item.originalStroke);
             item.obj.set('opacity', item.originalOpacity);
+            item.obj.set('visible', true);
         });
         hiddenObjects.forEach(obj => obj.set('visible', true));
         canvas.renderAll();
@@ -903,7 +922,7 @@ document.addEventListener('DOMContentLoaded', () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                image: canvas.backgroundImage ? canvas.backgroundImage.getSrc() : "",
+                image: baseImageB64,
                 mask: finalMaskB64, 
                 action_type: 'generation',
                 prompt: `${prompt}, 【Absolute Rule: Keep the original background environment strictly unchanged, exactly preserve all surroundings, do not alter adjacent buildings or roads】, architectural photography, highly detailed`
