@@ -158,8 +158,8 @@ def segment_pick():
                 x_max = min(arr.shape[1], target_x + radius + 1)
                 
                 if y_min < y_max and x_min < x_max:
-                    if np.any(arr[y_min:y_max, x_min:x_max] > 128):
-                        area = np.sum(arr > 128)
+                    if np.any(arr[y_min:y_max, x_min:x_max] > 0):
+                        area = np.sum(arr > 0)
                         return url, area
             except Exception as e:
                 print(f"Error fetching mask {url}: {e}")
@@ -180,7 +180,7 @@ def segment_pick():
         if best_mask_url:
             return jsonify({'success': True, 'mask_url': best_mask_url})
         else:
-            return jsonify({'error': 'クリックした位置に明確なブロックが見つかりませんでした。別の場所をクリックするか、手動ブラシをお使いください。'}), 500
+            return jsonify({'error': 'クリックした位置に明確なブロックが見つかりませんでした。別の場所をクリックするか、手動ブラシをお使いください。'}), 400
 
     except Exception as e:
         import traceback
